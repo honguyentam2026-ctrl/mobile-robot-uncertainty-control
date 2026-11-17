@@ -1,5 +1,5 @@
-%% Smoke Test & Preliminary Comparison of C0..C4 under Combined Uncertainty
-% Runs modes C0_ideal through C4_aug_ekf_simc on a single stressful warehouse
+%% Smoke Test & Preliminary Comparison of C0..C4 (Non-Kalman Architecture)
+% Runs modes C0_ideal through C4_comp_fuzzy_pidf on a stressful warehouse
 % scenario (odometry + landmark noise, wheel radius/track mismatch, floor
 % slip patch, and mid-run payload step change) using the same RNG seed.
 
@@ -46,19 +46,18 @@ cfg.scenario.loadStep.T = 0.65;
 cfg.scenario.loadStep.tau = 0.10;
 
 %% 2. Run C0..C4
-modes = {'C0_ideal', 'C1_noisy', 'C2_ekf', 'C3_ekf_simc', 'C4_aug_ekf_simc'};
-labels = {'C0 Ideal', 'C1 Noisy Odo', 'C2 Std EKF', 'C3 EKF+SIMC', 'C4 AugEKF+SIMC'};
+modes = {'C0_ideal', 'C1_noisy', 'C2_comp', 'C3_comp_pidf', 'C4_comp_fuzzy_pidf'};
+labels = {'C0 Ideal', 'C1 Noisy Odo', 'C2 CompFilter', 'C3 Comp+PIDF', 'C4 Comp+FuzzyPID'};
 results = cell(size(modes));
 
 fprintf('=== Smoke Comparison on %s (seed=%d) ===\n', cfg.scenario.name, cfg.seed);
-fprintf('%-16s | %5s | %7s | %8s | %8s | %8s | %7s\n', ...
-    'Controller', 'Goal', 'Time[s]', 'CTE_RMSE', 'CTE_Max', 'Est_RMSE', '2sig_XY');
+fprintf('%-17s | %5s | %7s | %8s | %8s | %8s | %7s\n', ...
+    'Controller', 'Goal', 'Time[s]', 'CTE_RMSE', 'CTE_Max', 'Est_RMSE', 'w_TV');
 fprintf('%s\n', repmat('-', 1, 78));
 
 for m = 1:numel(modes)
     cfgRun = cfg;
     if strcmp(modes{m}, 'C0_ideal')
-        % C0 runs in clean ideal baseline conditions for upper-bound reference
         cfgIdeal = default_sim_config();
         cfgIdeal.seed = cfg.seed;
         res = simulate_closed_loop(modes{m}, cfgIdeal);
@@ -67,14 +66,13 @@ for m = 1:numel(modes)
     end
     results{m} = res;
 
-    sigXY = mean(res.estMetrics.within2SigmaPos(1:2)) * 100;
-    fprintf('%-16s | %5d | %7.2f | %8.4f | %8.4f | %8.4f | %6.1f%%\n', ...
+    fprintf('%-17s | %5d | %7.2f | %8.4f | %8.4f | %8.4f | %7.2f\n', ...
         labels{m}, res.metrics.reachedGoal, res.metrics.completionTime, ...
         res.metrics.rmseCrossTrack, res.metrics.maxCrossTrack, ...
-        res.estMetrics.posRmse, sigXY);
+        res.estMetrics.posRmse, res.metrics.wTotalVariation);
 end
 
-%% 3. Diagnostic Plot (Trajectories, Cross-Track Error, Online eta Estimation)
+%% 3. Diagnostic Plot (Trajectories, Cross-Track Error, Fuzzy-PID Adaptation)
 figVisible = 'on';
 if batchStartupOptionUsed
     figVisible = 'off';
@@ -100,7 +98,7 @@ for m = 1:numel(modes)
 end
 xlim([-0.5 14]); ylim([-0.5 13]);
 xlabel('x [m]'); ylabel('y [m]');
-title('True Trajectories under Combined Uncertainty');
+title('True Trajectories (Non-Kalman C0..C4)');
 legend('Location', 'southeast', 'FontSize', 7.5);
 
 % Panel 2: Cross-Track Error vs Time
@@ -115,17 +113,19 @@ xlabel('Time [s]'); ylabel('Cross-Track Error [m]');
 title('Path Tracking Error over Time');
 legend('Location', 'northeast', 'FontSize', 7.5);
 
-% Panel 3: Online Uncertainty Parameter Estimation (C4 Augmented EKF)
+% Panel 3: Online Fuzzy-PID Gain Adaptation (C4)
 subplot(1, 3, 3); hold on; grid on;
 r4 = results{5};
-plot(r4.t, r4.etaTrue(:, 1), 'b--', 'LineWidth', 1.3, 'DisplayName', '\eta_v true');
-plot(r4.t, r4.etaEst(:, 1),  'b-',  'LineWidth', 1.7, 'DisplayName', '\eta_v est (AugEKF)');
-plot(r4.t, r4.etaTrue(:, 2), 'r--', 'LineWidth', 1.3, 'DisplayName', '\eta_\omega true');
-plot(r4.t, r4.etaEst(:, 2),  'r-',  'LineWidth', 1.7, 'DisplayName', '\eta_\omega est (AugEKF)');
-xlabel('Time [s]'); ylabel('Effective Scale Factor [-]');
-ylim([0.4 1.3]);
-title(sprintf('C4 Online Scale/Slip Adaptation (RMSE=%.3f, %.3f)', ...
-    r4.estMetrics.etaRmse(1), r4.estMetrics.etaRmse(2)));
+t4 = r4.t(1:end-1);
+plot(t4, r4.fuzzyGains(1:end-1, 1), 'b-',  'LineWidth', 1.5, 'DisplayName', 's_{Kp}');
+plot(t4, r4.fuzzyGains(1:end-1, 2), 'r-',  'LineWidth', 1.5, 'DisplayName', 's_{Ki}');
+plot(t4, r4.fuzzyGains(1:end-1, 3), 'g-',  'LineWidth', 1.5, 'DisplayName', 's_{Kd}');
+plot(t4, r4.fuzzyGains(1:end-1, 4), 'm--', 'LineWidth', 1.5, 'DisplayName', 'Slip Boost');
+plot(r4.t, r4.slipEst, 'k:', 'LineWidth', 1.4, 'DisplayName', 'Est. Slip');
+xline(cfg.scenario.loadStep.time, ':k', 'Load Step', 'HandleVisibility', 'off');
+xlabel('Time [s]'); ylabel('Multiplier / Indicator [-]');
+ylim([0 2.4]);
+title('C4 Online Fuzzy-PID Gain Scheduling');
 legend('Location', 'best', 'FontSize', 8);
 
 exportgraphics(fig, fullfile(resultsDir, 'smoke_compare_c0_to_c4.png'), 'Resolution', 200);

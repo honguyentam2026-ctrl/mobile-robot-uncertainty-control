@@ -46,20 +46,26 @@ function cfg = default_sim_config()
     cfg.actuator.wLim = [-3.0, 3.0];    % Angular drive command limits [rad/s]
     cfg.actuator.useNominalDynamics = true; % If false, instantaneous kinematics
 
-    %% EKF Filter Tuning Covariances (Vhat, What, P0)
-    cfg.ekf.P0 = diag([0.05^2, 0.05^2, (2*pi/180)^2]);
-    cfg.ekf.Vhat = diag([0.02^2, (1.5*pi/180)^2]);  % Assumed odo noise [m^2, rad^2]
-    cfg.ekf.What = diag([0.08^2, (2.5*pi/180)^2]);  % Assumed landmark noise [m^2, rad^2]
-    cfg.ekf.gateChi2 = chi2inv(0.99, 2);            % Mahalanobis gating threshold (99%)
-    cfg.ekf.useGating = true;
+    %% Complementary Pose Filter Parameters (Non-Kalman, C2..C4)
+    cfg.compFilter.alphaPos = 0.50;       % Landmark position blend gain [-]
+    cfg.compFilter.alphaTheta = 0.40;     % Landmark heading blend gain [-]
+    cfg.compFilter.maxInnovation = 1.50;  % Outlier rejection gate [m]
 
-    %% Augmented EKF (5-state: [x; y; theta; eta_v; eta_w]) Parameters
-    cfg.augEkf.eta0 = [1.0; 1.0];
-    cfg.augEkf.P0Eta = diag([0.25^2, 0.25^2]);
-    % Random-walk process noise on [eta_v; eta_w] per active step
-    cfg.augEkf.qEta = diag([0.015^2, 0.025^2]);
-    cfg.augEkf.etaBounds = [0.40, 1.60];
-    cfg.augEkf.compensateControl = true;
+    %% Inner Filtered PID (PIDF) Velocity Loop (C3, C4)
+    % Fixed PIDF tuned for robustness across nominal & loaded FOPDT plant
+    cfg.pidf.Kp = 0.75;                   % Proportional gain [-]
+    cfg.pidf.Ti = 0.50;                   % Integral time constant [s]
+    cfg.pidf.Td = 0.08;                   % Derivative time constant [s]
+    cfg.pidf.Tf = 0.20;                   % Derivative low-pass filter [s]
+
+    %% Fuzzy-PID Gain Scheduler Parameters (C4, Fuzzy Logic Toolbox)
+    cfg.fuzzyPid.errScale = 0.25;         % Speed/tracking error normalization
+    cfg.fuzzyPid.slipScale = 0.30;        % Apparent slip normalization
+    cfg.fuzzyPid.kpLevels = [0.75, 0.95, 1.15];
+    cfg.fuzzyPid.kiLevels = [0.85, 1.05, 1.30];
+    cfg.fuzzyPid.kdLevels = [0.70, 1.00, 1.35];
+    cfg.fuzzyPid.boostLevels = [1.00, 1.12, 1.24];
+    cfg.fuzzyPid.adaptLookahead = true;   % Tighten lookahead when CTE is large
 
     %% Uncertainty & Disturbance Scenario Parameters (Default = S0 Ideal)
     cfg.scenario.name = 'S0_ideal';

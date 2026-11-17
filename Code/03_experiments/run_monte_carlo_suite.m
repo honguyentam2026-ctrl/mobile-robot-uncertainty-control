@@ -1,8 +1,8 @@
 %% Monte Carlo Evaluation Suite across Scenarios S0..S5 (N = 30 Seeds)
-% Runs C1_noisy, C2_ekf, C3_ekf_simc, and C4_aug_ekf_simc across scenarios
-% S1..S5 using 30 shared RNG seeds per scenario, plus S0_ideal baseline
-% (C0_ideal). Exports CSV summary tables, MAT data, boxplots, and 2-sigma
-% EKF consistency plots to Code/03_experiments/results/.
+% Runs C1_noisy, C2_comp, C3_comp_pidf, and C4_comp_fuzzy_pidf across S1..S5
+% using 30 shared RNG seeds per scenario, plus S0_ideal baseline (C0_ideal).
+% Exports CSV summary tables, MAT data, boxplots, and S5 diagnostic plots
+% to Code/03_experiments/results/.
 
 clear; clc; close all;
 
@@ -25,8 +25,8 @@ scenarios = {'S1_sensor_noise', 'S2_wheel_slip', 'S3_model_mismatch', ...
              'S4_load_step', 'S5_worst_case'};
 scenShort = {'S1 Noise', 'S2 Slip', 'S3 Mismatch', 'S4 LoadStep', 'S5 Worst'};
 
-modes = {'C1_noisy', 'C2_ekf', 'C3_ekf_simc', 'C4_aug_ekf_simc'};
-modeLabels = {'C1 Noisy', 'C2 StdEKF', 'C3 EKF+SIMC', 'C4 AugEKF+SIMC'};
+modes = {'C1_noisy', 'C2_comp', 'C3_comp_pidf', 'C4_comp_fuzzy_pidf'};
+modeLabels = {'C1 Noisy', 'C2 CompFilter', 'C3 Comp+PIDF', 'C4 Comp+FuzzyPID'};
 
 numScen = numel(scenarios);
 numModes = numel(modes);
@@ -48,10 +48,8 @@ compTime    = nan(numScen, numModes, numSeeds);
 goalReached = nan(numScen, numModes, numSeeds);
 estPosRmse  = nan(numScen, numModes, numSeeds);
 estHeadRmse = nan(numScen, numModes, numSeeds);
-sig2XY      = nan(numScen, numModes, numSeeds);
 wTV         = nan(numScen, numModes, numSeeds);
 
-% Keep representative detailed trajectories (seed 1 of S5_worst_case)
 repS5 = cell(1, numModes);
 
 tStart = tic;
@@ -71,7 +69,6 @@ for s = 1:numScen
             goalReached(s, m, r) = double(res.metrics.reachedGoal);
             estPosRmse(s, m, r)  = res.estMetrics.posRmse;
             estHeadRmse(s, m, r) = res.estMetrics.headingRmseDeg;
-            sig2XY(s, m, r)      = mean(res.estMetrics.within2SigmaPos(1:2)) * 100.0;
             wTV(s, m, r)         = res.metrics.wTotalVariation;
 
             if strcmp(scenarios{s}, 'S5_worst_case') && r == 1
@@ -98,14 +95,12 @@ colMaxMean    = zeros(nRows, 1);
 colMaxStd     = zeros(nRows, 1);
 colEstMean    = zeros(nRows, 1);
 colEstStd     = zeros(nRows, 1);
-colSig2Mean   = zeros(nRows, 1);
-colSig2Std    = zeros(nRows, 1);
 colWtvMean    = zeros(nRows, 1);
 
 row = 0;
 fprintf('=== Monte Carlo Summary (Mean +/- Std, N = %d seeds) ===\n', numSeeds);
-fprintf('%-12s | %-14s | %6s | %11s | %15s | %15s | %7s\n', ...
-    'Scenario', 'Controller', 'Goal%', 'Time [s]', 'CTE_RMSE [m]', 'Est_RMSE [m]', '2sig%');
+fprintf('%-12s | %-16s | %6s | %11s | %15s | %15s | %7s\n', ...
+    'Scenario', 'Controller', 'Goal%', 'Time [s]', 'CTE_RMSE [m]', 'Est_RMSE [m]', 'w_TV');
 fprintf('%s\n', repmat('-', 1, 95));
 
 for s = 1:numScen
@@ -122,31 +117,28 @@ for s = 1:numScen
         colMaxStd(row)   = std(cteMax(s, m, :));
         colEstMean(row)  = mean(estPosRmse(s, m, :));
         colEstStd(row)   = std(estPosRmse(s, m, :));
-        colSig2Mean(row) = mean(sig2XY(s, m, :));
-        colSig2Std(row)  = std(sig2XY(s, m, :));
         colWtvMean(row)  = mean(wTV(s, m, :));
 
-        fprintf('%-12s | %-14s | %5.1f%% | %5.2f+-%4.2f | %6.4f+-%6.4f | %6.4f+-%6.4f | %6.1f\n', ...
+        fprintf('%-12s | %-16s | %5.1f%% | %5.2f+-%4.2f | %6.4f+-%6.4f | %6.4f+-%6.4f | %7.1f\n', ...
             scenShort{s}, modeLabels{m}, colGoalPct(row), ...
             colTimeMean(row), colTimeStd(row), ...
             colCteMean(row), colCteStd(row), ...
             colEstMean(row), colEstStd(row), ...
-            colSig2Mean(row));
+            colWtvMean(row));
     end
     fprintf('%s\n', repmat('-', 1, 95));
 end
 
 summaryTbl = table(colScen, colMode, colGoalPct, colTimeMean, colTimeStd, ...
-    colCteMean, colCteStd, colMaxMean, colMaxStd, colEstMean, colEstStd, ...
-    colSig2Mean, colSig2Std, colWtvMean, ...
+    colCteMean, colCteStd, colMaxMean, colMaxStd, colEstMean, colEstStd, colWtvMean, ...
     'VariableNames', {'Scenario', 'Controller', 'GoalRatePct', ...
     'TimeMean_s', 'TimeStd_s', 'CTE_RmseMean_m', 'CTE_RmseStd_m', ...
     'CTE_MaxMean_m', 'CTE_MaxStd_m', 'EstRmseMean_m', 'EstRmseStd_m', ...
-    'Within2SigmaPct', 'Within2SigmaStd', 'OmegaTotalVarMean'});
+    'OmegaTotalVarMean'});
 
 writetable(summaryTbl, fullfile(resultsDir, 'mc_summary_table.csv'));
 
-%% 5. Figure 1: Monte Carlo Boxplots (C2..C4 vs S1..S5 + C1 failure summary)
+%% 5. Figure 1: Monte Carlo Boxplots (CTE RMSE & Completion Time)
 figVisible = 'on';
 if batchStartupOptionUsed
     figVisible = 'off';
@@ -156,7 +148,6 @@ fig1 = figure('Visible', figVisible, 'Position', [70 70 1280 500], 'Color', 'w')
 colors3 = [0.85 0.55 0.10; 0.49 0.18 0.56; 0.15 0.62 0.25];
 
 subplot(1, 2, 1); hold on; grid on;
-% Plot CTE RMSE distributions for C2, C3, C4 across S1..S5
 offsets = [-0.24, 0.0, 0.24];
 boxWidth = 0.20;
 for mIdx = 2:4
@@ -166,13 +157,11 @@ for mIdx = 2:4
         'Colors', colors3(mIdx - 1, :), 'Symbol', '+');
     set(b, 'LineWidth', 1.2);
 end
-yline(resS0.metrics.rmseCrossTrack, 'b--', 'LineWidth', 1.4, ...
-    'DisplayName', 'C0 Ideal S0');
-% Dummy legend handles for C2..C4
+yline(resS0.metrics.rmseCrossTrack, 'b--', 'LineWidth', 1.4);
 hLeg = gobjects(4, 1);
-hLeg(1) = plot(NaN, NaN, 's', 'Color', colors3(1,:), 'MarkerFaceColor', colors3(1,:), 'DisplayName', 'C2 StdEKF');
-hLeg(2) = plot(NaN, NaN, 's', 'Color', colors3(2,:), 'MarkerFaceColor', colors3(2,:), 'DisplayName', 'C3 EKF+SIMC');
-hLeg(3) = plot(NaN, NaN, 's', 'Color', colors3(3,:), 'MarkerFaceColor', colors3(3,:), 'DisplayName', 'C4 AugEKF+SIMC');
+hLeg(1) = plot(NaN, NaN, 's', 'Color', colors3(1,:), 'MarkerFaceColor', colors3(1,:), 'DisplayName', 'C2 CompFilter');
+hLeg(2) = plot(NaN, NaN, 's', 'Color', colors3(2,:), 'MarkerFaceColor', colors3(2,:), 'DisplayName', 'C3 Comp+PIDF');
+hLeg(3) = plot(NaN, NaN, 's', 'Color', colors3(3,:), 'MarkerFaceColor', colors3(3,:), 'DisplayName', 'C4 Comp+FuzzyPID');
 hLeg(4) = plot(NaN, NaN, 'b--', 'LineWidth', 1.4, 'DisplayName', 'C0 Ideal Baseline');
 set(gca, 'XTick', 1:numScen, 'XTickLabel', scenShort);
 xlim([0.4, numScen + 0.6]);
@@ -182,23 +171,22 @@ title(sprintf('Cross-Track RMSE (N=%d seeds; C1 diverges 1.2-3.7 m)', numSeeds))
 legend(hLeg, 'Location', 'northwest');
 
 subplot(1, 2, 2); hold on; grid on;
-% Grouped bar chart of EKF 2-sigma consistency (C2, C3, C4)
-sigMeans = squeeze(mean(sig2XY(:, 2:4, :), 3));
-hb = bar(sigMeans);
+timeMeans = squeeze(mean(compTime(:, 2:4, :), 3));
+hb = bar(timeMeans);
 for k = 1:3
     hb(k).FaceColor = colors3(k, :);
 end
-yline(95.0, 'r--', 'LineWidth', 1.5, 'DisplayName', '95% Nominal Consistency');
+yline(resS0.metrics.completionTime, 'b--', 'LineWidth', 1.5, 'DisplayName', 'C0 Ideal Time');
 set(gca, 'XTick', 1:numScen, 'XTickLabel', scenShort);
-ylim([50 105]);
-ylabel('Samples Within \pm2\sigma Bound [%]');
-title('Estimator Covariance Consistency (95% Target)');
-legend([hb(1), hb(2), hb(3)], {'C2 StdEKF', 'C3 EKF+SIMC', 'C4 AugEKF+SIMC'}, ...
-    'Location', 'southwest');
+ylim([0 115]);
+ylabel('Mean Completion Time [s]');
+title('Completion Time Comparison (Lower is Faster)');
+legend([hb(1), hb(2), hb(3)], {'C2 CompFilter (Open-Loop)', 'C3 Comp+PIDF', 'C4 Comp+FuzzyPID'}, ...
+    'Location', 'northwest');
 
-exportgraphics(fig1, fullfile(resultsDir, 'mc_cte_and_consistency.png'), 'Resolution', 200);
+exportgraphics(fig1, fullfile(resultsDir, 'mc_cte_and_time.png'), 'Resolution', 200);
 
-%% 6. Figure 2: Representative S5 Run (Trajectories, Zoomed CTE, 2-sigma Bounds)
+%% 6. Figure 2: Representative S5 Run (Trajectories, CTE, Est Error, Fuzzy Gains)
 fig2 = figure('Visible', figVisible, 'Position', [70 70 1280 760], 'Color', 'w');
 
 % (a) Trajectories C0, C2, C3, C4
@@ -233,34 +221,31 @@ xlabel('Time [s]'); ylabel('Cross-Track Error [m]');
 title('S5 Cross-Track Error Comparison (C2..C4)');
 legend('Location', 'northeast', 'FontSize', 8);
 
-% (c) S5 Estimation Error with +-2sigma Envelope: C3 StdEKF vs C4 AugEKF
+% (c) S5 Localization Position Error (C2, C3, C4 vs C1)
 subplot(2, 2, 3); hold on; grid on;
-r3 = repS5{3};
-r4 = repS5{4};
-errX3 = r3.poseEst(:, 1) - r3.poseTrue(:, 1);
-errX4 = r4.poseEst(:, 1) - r4.poseTrue(:, 1);
-sig2X3 = 2.0 * sqrt(r3.pDiag(:, 1));
-sig2X4 = 2.0 * sqrt(r4.pDiag(:, 1));
-plot(r3.t, errX3, 'Color', colors3(2,:), 'LineWidth', 1.2, 'DisplayName', 'C3 x-err');
-plot(r3.t,  sig2X3, '--', 'Color', colors3(2,:), 'HandleVisibility', 'off');
-plot(r3.t, -sig2X3, '--', 'Color', colors3(2,:), 'HandleVisibility', 'off');
-plot(r4.t, errX4, 'Color', colors3(3,:), 'LineWidth', 1.4, 'DisplayName', 'C4 x-err');
-plot(r4.t,  sig2X4, ':', 'Color', colors3(3,:), 'LineWidth', 1.3, 'DisplayName', 'C4 \pm2\sigma');
-plot(r4.t, -sig2X4, ':', 'Color', colors3(3,:), 'LineWidth', 1.3, 'HandleVisibility', 'off');
-xlabel('Time [s]'); ylabel('X Estimation Error [m]');
-title('S5 Consistency Check (x-error vs \pm2\sigma)');
+for mIdx = 2:4
+    r = repS5{mIdx};
+    posErr = hypot(r.poseEst(:, 1) - r.poseTrue(:, 1), r.poseEst(:, 2) - r.poseTrue(:, 2));
+    plot(r.t, posErr, 'Color', colors3(mIdx - 1, :), 'LineWidth', 1.4, ...
+        'DisplayName', modeLabels{mIdx});
+end
+xlabel('Time [s]'); ylabel('Pose Estimation Error [m]');
+title('S5 Complementary Filter Position Error (Non-Kalman)');
 legend('Location', 'northeast', 'FontSize', 8);
 
-% (d) C4 Online Scale/Slip Parameter Adaptation on S5
+% (d) C4 Online Fuzzy-PID Gain Adaptation on S5
 subplot(2, 2, 4); hold on; grid on;
-plot(r4.t, r4.etaTrue(:, 1), 'b--', 'LineWidth', 1.3, 'DisplayName', '\eta_v true');
-plot(r4.t, r4.etaEst(:, 1),  'b-',  'LineWidth', 1.6, 'DisplayName', '\eta_v est');
-plot(r4.t, r4.etaTrue(:, 2), 'r--', 'LineWidth', 1.3, 'DisplayName', '\eta_\omega true');
-plot(r4.t, r4.etaEst(:, 2),  'r-',  'LineWidth', 1.6, 'DisplayName', '\eta_\omega est');
-xlabel('Time [s]'); ylabel('Scale Factor [-]');
-ylim([0.4 1.3]);
-title(sprintf('C4 Online Scale Adaptation (RMSE=%.3f, %.3f)', ...
-    r4.estMetrics.etaRmse(1), r4.estMetrics.etaRmse(2)));
+r4 = repS5{4};
+t4 = r4.t(1:end-1);
+plot(t4, r4.fuzzyGains(1:end-1, 1), 'b-',  'LineWidth', 1.5, 'DisplayName', 's_{Kp}');
+plot(t4, r4.fuzzyGains(1:end-1, 2), 'r-',  'LineWidth', 1.5, 'DisplayName', 's_{Ki}');
+plot(t4, r4.fuzzyGains(1:end-1, 3), 'g-',  'LineWidth', 1.5, 'DisplayName', 's_{Kd}');
+plot(t4, r4.fuzzyGains(1:end-1, 4), 'm--', 'LineWidth', 1.5, 'DisplayName', 'Slip Boost');
+plot(r4.t, r4.slipEst, 'k:', 'LineWidth', 1.4, 'DisplayName', 'Est. Slip');
+xline(cfgS5.scenario.loadStep.time, ':k', 'Load Step', 'HandleVisibility', 'off');
+xlabel('Time [s]'); ylabel('Multiplier / Indicator [-]');
+ylim([0 2.0]);
+title('C4 Online Fuzzy-PID Gain Adaptation on S5');
 legend('Location', 'best', 'FontSize', 8);
 
 exportgraphics(fig2, fullfile(resultsDir, 'mc_s5_detailed_analysis.png'), 'Resolution', 200);
@@ -269,6 +254,6 @@ exportgraphics(fig2, fullfile(resultsDir, 'mc_s5_detailed_analysis.png'), 'Resol
 save(fullfile(resultsDir, 'mc_suite_results.mat'), ...
     'scenarios', 'scenShort', 'modes', 'modeLabels', 'seeds', 'resS0', ...
     'cteRmse', 'cteMax', 'compTime', 'goalReached', 'estPosRmse', ...
-    'estHeadRmse', 'sig2XY', 'wTV', 'summaryTbl', 'repS5');
+    'estHeadRmse', 'wTV', 'summaryTbl', 'repS5');
 
 fprintf('Saved Monte Carlo results to: %s\n', resultsDir);

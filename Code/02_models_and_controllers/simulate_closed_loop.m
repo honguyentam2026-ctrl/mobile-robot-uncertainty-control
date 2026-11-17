@@ -1,18 +1,18 @@
 function res = simulate_closed_loop(mode, cfg)
 %SIMULATE_CLOSED_LOOP Run one closed-loop differential-drive simulation.
 %   RES = SIMULATE_CLOSED_LOOP(MODE, CFG) simulates path following under the
-%   uncertainty scenario in CFG using one of five controller/estimator modes:
-%     'C0_ideal'        - Pure Pursuit using true pose (ideal reference)
-%     'C1_noisy'        - Pure Pursuit using raw noisy odometry (no filter)
-%     'C2_ekf'          - Pure Pursuit + 3-state EKF (odo + landmarks)
-%     'C3_ekf_simc'     - Pure Pursuit + 3-state EKF + inner PI-SIMC loop
-%     'C4_aug_ekf_simc' - Pure Pursuit + 5-state Augmented EKF (eta_v, eta_w)
-%                         + inner PI-SIMC loop + slip/scale compensation
+%   uncertainty scenario in CFG using one of five non-Kalman controller/
+%   estimator modes:
+%     'C0_ideal'          - Pure Pursuit using true pose (ideal reference)
+%     'C1_noisy'          - Pure Pursuit using raw noisy odometry (no filter)
+%     'C2_comp'           - Pure Pursuit + Complementary Filter (open-loop inner)
+%     'C3_comp_pidf'      - Pure Pursuit + Complementary Filter + fixed PIDF
+%     'C4_comp_fuzzy_pidf'- Pure Pursuit + Complementary Filter + Fuzzy-PIDF
 %
 %   Note: Ground-truth pose is NEVER passed to any controller/estimator in
 %   modes C1..C4; only C0_ideal uses true pose as the upper-bound benchmark.
 
-    validModes = {'C0_ideal', 'C1_noisy', 'C2_ekf', 'C3_ekf_simc', 'C4_aug_ekf_simc'};
+    validModes = {'C0_ideal', 'C1_noisy', 'C2_comp', 'C3_comp_pidf', 'C4_comp_fuzzy_pidf'};
     if ~ismember(mode, validModes)
         error('simulate_closed_loop:InvalidMode', ...
             'Unknown mode "%s". Must be one of: %s', mode, strjoin(validModes, ', '));
@@ -32,7 +32,7 @@ function res = simulate_closed_loop(mode, cfg)
         'MaxAngularVelocity', cfg.pp.MaxAngularVelocity, ...
         'LookaheadDistance', cfg.pp.LookaheadDistance);
 
-    %% 2. Initialize Plant, Estimator, and Inner PI-SIMC Controller
+    %% 2. Initialize Plant, Complementary Filter, PIDF, and Fuzzy Scheduler
     plantState.poseTrue = cfg.initialPose(:);
     plantState.vShaft = 0.0;
     plantState.wShaft = 0.0;
@@ -42,41 +42,35 @@ function res = simulate_closed_loop(mode, cfg)
     poseTrue = plantState.poseTrue;
     poseOdo = cfg.initialPose(:);
     shaftVelMeas = [0.0; 0.0];
-    piState = [];
+    pidState = [];
+    fisState = [];
+    compState = [];
+    slipEst = 0.0;
 
-    ekfState = [];
-    etaEst = cfg.augEkf.eta0(:);
     if strcmp(mode, 'C0_ideal') || strcmp(mode, 'C1_noisy')
         poseEst = cfg.initialPose(:);
-        pDiagInit = nan(1, 3);
-    elseif strcmp(mode, 'C4_aug_ekf_simc')
-        [ekfState, poseEst, etaEst, ~] = ekf_augmented([], [], [], cfg);
-        pDiagInit = diag(ekfState.P)';
     else
-        [ekfState, poseEst, ~] = ekf_standard([], [], [], cfg);
-        pDiagInit = diag(ekfState.P)';
+        [compState, poseEst, slipEst] = complementary_pose_filter([], [], [], cfg);
     end
 
     %% 3. Preallocate Logs
     tHist = zeros(maxSteps, 1);
     poseTrueHist = zeros(maxSteps, 3);
     poseEstHist = zeros(maxSteps, 3);
-    pDiagHist = nan(maxSteps, length(pDiagInit));
-    etaTrueHist = ones(maxSteps, 2);
-    etaEstHist = ones(maxSteps, 2);
+    slipEstHist = zeros(maxSteps, 1);
+    fuzzyGainHist = ones(maxSteps, 4); % [sKp, sKi, sKd, slipBoost]
     vRefHist = zeros(maxSteps, 1);
     wRefHist = zeros(maxSteps, 1);
     uCmdHist = zeros(maxSteps, 2);
-    nisHist = nan(maxSteps, 1);
 
     stepIdx = 1;
     poseTrueHist(stepIdx, :) = poseTrue';
     poseEstHist(stepIdx, :) = poseEst';
-    pDiagHist(stepIdx, :) = pDiagInit;
-    etaTrueHist(stepIdx, :) = [cfg.scenario.etaVBase, cfg.scenario.etaWBase];
-    etaEstHist(stepIdx, :) = etaEst';
+    slipEstHist(stepIdx) = slipEst;
 
     distanceToGoal = norm(poseTrue(1:2)' - goalXY);
+    vPPPrev = 0.0;
+    wPPPrev = 0.0;
 
     %% 4. Closed-Loop Simulation
     while (distanceToGoal > cfg.goalRadius) && (stepIdx < maxSteps)
@@ -89,24 +83,43 @@ function res = simulate_closed_loop(mode, cfg)
             poseForCtrl = poseEst;
         end
 
-        % Outer guidance (Pure Pursuit)
-        [vPP, wPP] = pp(poseForCtrl);
-        vRef = vPP;
-        wRef = wPP;
+        % Optional Fuzzy adaptation of Pure Pursuit lookahead + PIDF gains (C4)
+        gainScale = [1.0, 1.0, 1.0];
+        slipBoost = 1.0;
+        if strcmp(mode, 'C4_comp_fuzzy_pidf')
+            cteEst = local_point_to_polyline_dist(poseForCtrl(1:2)', cfg.path);
+            velErr = hypot(vPPPrev - shaftVelMeas(1), 0.5 * (wPPPrev - shaftVelMeas(2)));
+            errNorm = (0.65 * cteEst + 0.35 * velErr) / cfg.fuzzyPid.errScale;
+            slipNorm = slipEst / cfg.fuzzyPid.slipScale;
 
-        % Augmented-EKF inverse scale/slip feedforward compensation
-        if strcmp(mode, 'C4_aug_ekf_simc') && cfg.augEkf.compensateControl
-            bMin = cfg.augEkf.etaBounds(1);
-            bMax = cfg.augEkf.etaBounds(2);
-            etaVC = min(max(etaEst(1), bMin), bMax);
-            etaWC = min(max(etaEst(2), bMin), bMax);
-            vRef = min(max(vPP / etaVC, cfg.actuator.vLim(1)), cfg.actuator.vLim(2));
-            wRef = min(max(wPP / etaWC, cfg.actuator.wLim(1)), cfg.actuator.wLim(2));
+            [gainScale, slipBoost, fisState] = fuzzy_pid_scheduler( ...
+                fisState, errNorm, slipNorm, cfg);
+
+            if cfg.fuzzyPid.adaptLookahead
+                % Tighten lookahead only when tracking error is significant
+                errExcess = max(cteEst - 0.08, 0.0) / 0.25;
+                adaptFactor = 1.0 - 0.22 * min(errExcess, 1.0);
+                pp.LookaheadDistance = max(0.30, cfg.pp.LookaheadDistance * adaptFactor);
+            end
         end
 
-        % Inner velocity controller (open-loop vs PI-SIMC)
-        if strcmp(mode, 'C3_ekf_simc') || strcmp(mode, 'C4_aug_ekf_simc')
-            [piState, uCmd] = pi_speed_simc(piState, [vRef; wRef], shaftVelMeas, cfg);
+        % Outer guidance (Pure Pursuit)
+        [vPP, wPP] = pp(poseForCtrl);
+        vPPPrev = vPP;
+        wPPPrev = wPP;
+
+        if strcmp(mode, 'C4_comp_fuzzy_pidf')
+            vRef = min(max(vPP * slipBoost, cfg.actuator.vLim(1)), cfg.actuator.vLim(2));
+            wRef = wPP;
+        else
+            vRef = vPP;
+            wRef = wPP;
+        end
+
+        % Inner velocity controller (open-loop vs fixed PIDF vs Fuzzy-PIDF)
+        if strcmp(mode, 'C3_comp_pidf') || strcmp(mode, 'C4_comp_fuzzy_pidf')
+            [pidState, uCmd] = pid_speed_filtered( ...
+                pidState, [vRef; wRef], shaftVelMeas, cfg, gainScale);
         else
             uCmd = [vRef; wRef];
         end
@@ -114,44 +127,36 @@ function res = simulate_closed_loop(mode, cfg)
         vRefHist(stepIdx) = vPP;
         wRefHist(stepIdx) = wPP;
         uCmdHist(stepIdx, :) = uCmd';
+        fuzzyGainHist(stepIdx, :) = [gainScale, slipBoost];
 
         % True physical robot step
-        [plantState, poseTrue, encoderDelta, etaTrue] = robot_plant_step( ...
+        [plantState, poseTrue, encoderDelta, ~] = robot_plant_step( ...
             plantState, uCmd, tCurr, cfg);
 
         % Simulate noisy odometry + periodic landmarks
         [odoMeas, obsList, shaftVelMeas] = sensor_odometry_landmark( ...
             stepIdx, poseTrue, encoderDelta, plantState, cfg);
 
-        % State estimation update
-        nis = NaN;
+        % State estimation update (none vs raw odometry vs complementary filter)
         if strcmp(mode, 'C0_ideal')
             poseEst = poseTrue;
-            pDiagCurr = nan(1, 3);
+            slipEst = 0.0;
         elseif strcmp(mode, 'C1_noisy')
             poseOdo = [poseOdo(1) + odoMeas(1) * cos(poseOdo(3));
                        poseOdo(2) + odoMeas(1) * sin(poseOdo(3));
                        wrap_to_pi(poseOdo(3) + odoMeas(2))];
             poseEst = poseOdo;
-            pDiagCurr = nan(1, 3);
-        elseif strcmp(mode, 'C4_aug_ekf_simc')
-            [ekfState, poseEst, etaEst, nis] = ekf_augmented( ...
-                ekfState, odoMeas, obsList, cfg);
-            pDiagCurr = diag(ekfState.P)';
+            slipEst = 0.0;
         else
-            [ekfState, poseEst, nis] = ekf_standard( ...
-                ekfState, odoMeas, obsList, cfg);
-            pDiagCurr = diag(ekfState.P)';
+            [compState, poseEst, slipEst] = complementary_pose_filter( ...
+                compState, odoMeas, obsList, cfg);
         end
 
         stepIdx = stepIdx + 1;
         tHist(stepIdx) = (stepIdx - 1) * dt;
         poseTrueHist(stepIdx, :) = poseTrue';
         poseEstHist(stepIdx, :) = poseEst';
-        pDiagHist(stepIdx, :) = pDiagCurr;
-        etaTrueHist(stepIdx, :) = etaTrue';
-        etaEstHist(stepIdx, :) = etaEst';
-        nisHist(stepIdx) = nis;
+        slipEstHist(stepIdx) = slipEst;
 
         distanceToGoal = norm(poseTrue(1:2)' - goalXY);
     end
@@ -160,36 +165,22 @@ function res = simulate_closed_loop(mode, cfg)
     tHist = tHist(1:stepIdx);
     poseTrueHist = poseTrueHist(1:stepIdx, :);
     poseEstHist = poseEstHist(1:stepIdx, :);
-    pDiagHist = pDiagHist(1:stepIdx, :);
-    etaTrueHist = etaTrueHist(1:stepIdx, :);
-    etaEstHist = etaEstHist(1:stepIdx, :);
+    slipEstHist = slipEstHist(1:stepIdx);
+    fuzzyGainHist = fuzzyGainHist(1:stepIdx, :);
     vRefHist = vRefHist(1:stepIdx);
     wRefHist = wRefHist(1:stepIdx);
     uCmdHist = uCmdHist(1:stepIdx, :);
-    nisHist = nisHist(1:stepIdx);
 
     metrics = compute_path_metrics( ...
         tHist, poseTrueHist, cfg.path, uCmdHist(1:end-1, 1), uCmdHist(1:end-1, 2));
     metrics.reachedGoal = (metrics.finalGoalError <= cfg.goalRadius);
 
-    % Estimation error & 2-sigma consistency metrics
+    % Estimation error metrics (from poseEst vs poseTrue)
     posErr = sqrt(sum((poseEstHist(:, 1:2) - poseTrueHist(:, 1:2)).^2, 2));
     headErr = wrap_to_pi(poseEstHist(:, 3) - poseTrueHist(:, 3));
 
     estMetrics.posRmse = sqrt(mean(posErr.^2));
     estMetrics.headingRmseDeg = rad2deg(sqrt(mean(headErr.^2)));
-
-    if all(isnan(pDiagHist(:, 1)))
-        estMetrics.within2SigmaPos = [NaN, NaN, NaN];
-    else
-        errXYZ = [poseEstHist(:, 1:2) - poseTrueHist(:, 1:2), headErr];
-        sig2 = 2.0 * sqrt(max(pDiagHist(:, 1:3), 0.0));
-        estMetrics.within2SigmaPos = mean(abs(errXYZ) <= sig2, 1);
-    end
-
-    estMetrics.etaRmse = sqrt(mean((etaEstHist - etaTrueHist).^2, 1));
-    validNis = nisHist(~isnan(nisHist));
-    estMetrics.meanNis = mean(validNis);
 
     %% 6. Pack Result Struct
     res.mode = mode;
@@ -198,13 +189,32 @@ function res = simulate_closed_loop(mode, cfg)
     res.t = tHist;
     res.poseTrue = poseTrueHist;
     res.poseEst = poseEstHist;
-    res.pDiag = pDiagHist;
-    res.etaTrue = etaTrueHist;
-    res.etaEst = etaEstHist;
+    res.slipEst = slipEstHist;
+    res.fuzzyGains = fuzzyGainHist;
     res.vRef = vRefHist;
     res.wRef = wRefHist;
     res.uCmd = uCmdHist;
-    res.nis = nisHist;
     res.metrics = metrics;
     res.estMetrics = estMetrics;
+end
+
+function dMin = local_point_to_polyline_dist(pt, poly)
+%LOCAL_POINT_TO_POLYLINE_DIST Minimum Euclidean distance from 2D point to path.
+    dMin = inf;
+    for k = 1:(size(poly, 1) - 1)
+        a = poly(k, :);
+        b = poly(k + 1, :);
+        ab = b - a;
+        lenSq = dot(ab, ab);
+        if lenSq <= 1e-12
+            d = norm(pt - a);
+        else
+            tProj = min(max(dot(pt - a, ab) / lenSq, 0.0), 1.0);
+            proj = a + tProj * ab;
+            d = norm(pt - proj);
+        end
+        if d < dMin
+            dMin = d;
+        end
+    end
 end
