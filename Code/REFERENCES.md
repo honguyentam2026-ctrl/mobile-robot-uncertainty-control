@@ -13,7 +13,7 @@
 
 1. The MathWorks, Inc., "Path Following for a Differential Drive Robot," *Robotics System Toolbox Documentation*, MATLAB R2024b (v24.2). [Online]. Available: https://www.mathworks.com/help/robotics/ug/path-following-for-differential-drive-robot.html (accessed Nov. 17, 2026).
 2. The MathWorks, Inc., "`controllerPurePursuit` — Create controller to follow a set of waypoints," *Navigation Toolbox Reference*, MATLAB R2024b (v24.2).
-3. The MathWorks, Inc., "`differentialDriveKinematics` — Create differential-drive vehicle model," *Robotics System Toolbox Reference*, MATLAB R2024b (v24.2).
+3. The MathWorks, Inc., "Mobile Robot Kinematics Equations" & "`differentialDriveKinematics`," *Robotics System Toolbox Documentation*, MATLAB R2024b (v24.2). [Online]. Available: https://www.mathworks.com/help/robotics/ug/mobile-robot-kinematics-equations.html (accessed Nov. 18, 2026).
 4. The MathWorks, Inc., *Fuzzy Logic Toolbox User's Guide* (`sugfis`, `evalfis`), MATLAB R2024b (v24.2).
 5. J. M. Snider, "Automatic Steering Methods for Autonomous Automobile Path Tracking," Robotics Institute, Carnegie Mellon University, Pittsburgh, PA, USA, Tech. Rep. CMU-RI-TR-09-08, Feb. 2009.
 6. K. J. Åström and T. Hägglund, *PID Controllers: Theory, Design, and Tuning*, 2nd ed. Research Triangle Park, NC, USA: ISA, 1995.
