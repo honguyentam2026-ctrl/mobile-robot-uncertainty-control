@@ -8,11 +8,13 @@ function res = simulate_closed_loop(mode, cfg)
 %     'C2_comp'           - Pure Pursuit + Complementary Filter (open-loop inner)
 %     'C3_comp_pidf'      - Pure Pursuit + Complementary Filter + fixed PIDF
 %     'C4_comp_fuzzy_pidf'- Pure Pursuit + Complementary Filter + Fuzzy-PIDF
+%     'C5_ekf_fuzzy_pidf' - Pure Pursuit + Extended Kalman Filter + Fuzzy-PIDF
 %
 %   Note: Ground-truth pose is NEVER passed to any controller/estimator in
-%   modes C1..C4; only C0_ideal uses true pose as the upper-bound benchmark.
+%   modes C1..C5; only C0_ideal uses true pose as the upper-bound benchmark.
 
-    validModes = {'C0_ideal', 'C1_noisy', 'C2_comp', 'C3_comp_pidf', 'C4_comp_fuzzy_pidf'};
+    validModes = {'C0_ideal', 'C1_noisy', 'C2_comp', 'C3_comp_pidf', ...
+                  'C4_comp_fuzzy_pidf', 'C5_ekf_fuzzy_pidf'};
     if ~ismember(mode, validModes)
         error('simulate_closed_loop:InvalidMode', ...
             'Unknown mode "%s". Must be one of: %s', mode, strjoin(validModes, ', '));
@@ -45,10 +47,13 @@ function res = simulate_closed_loop(mode, cfg)
     pidState = [];
     fisState = [];
     compState = [];
+    ekfState = [];
     slipEst = 0.0;
 
     if strcmp(mode, 'C0_ideal') || strcmp(mode, 'C1_noisy')
         poseEst = cfg.initialPose(:);
+    elseif strcmp(mode, 'C5_ekf_fuzzy_pidf')
+        [ekfState, poseEst, ~, slipEst] = ekf_standard([], [], [], cfg);
     else
         [compState, poseEst, slipEst] = complementary_pose_filter([], [], [], cfg);
     end
@@ -83,10 +88,11 @@ function res = simulate_closed_loop(mode, cfg)
             poseForCtrl = poseEst;
         end
 
-        % Optional Fuzzy adaptation of Pure Pursuit lookahead + PIDF gains (C4)
+        % Optional Fuzzy adaptation of Pure Pursuit lookahead + PIDF gains (C4, C5)
         gainScale = [1.0, 1.0, 1.0];
         slipBoost = 1.0;
-        if strcmp(mode, 'C4_comp_fuzzy_pidf')
+        isFuzzyMode = strcmp(mode, 'C4_comp_fuzzy_pidf') || strcmp(mode, 'C5_ekf_fuzzy_pidf');
+        if isFuzzyMode
             cteEst = local_point_to_polyline_dist(poseForCtrl(1:2)', cfg.path);
             velErr = hypot(vPPPrev - shaftVelMeas(1), 0.5 * (wPPPrev - shaftVelMeas(2)));
             errNorm = (0.65 * cteEst + 0.35 * velErr) / cfg.fuzzyPid.errScale;
@@ -108,7 +114,7 @@ function res = simulate_closed_loop(mode, cfg)
         vPPPrev = vPP;
         wPPPrev = wPP;
 
-        if strcmp(mode, 'C4_comp_fuzzy_pidf')
+        if isFuzzyMode
             vRef = min(max(vPP * slipBoost, cfg.actuator.vLim(1)), cfg.actuator.vLim(2));
             wRef = wPP;
         else
@@ -117,7 +123,7 @@ function res = simulate_closed_loop(mode, cfg)
         end
 
         % Inner velocity controller (open-loop vs fixed PIDF vs Fuzzy-PIDF)
-        if strcmp(mode, 'C3_comp_pidf') || strcmp(mode, 'C4_comp_fuzzy_pidf')
+        if strcmp(mode, 'C3_comp_pidf') || isFuzzyMode
             [pidState, uCmd] = pid_speed_filtered( ...
                 pidState, [vRef; wRef], shaftVelMeas, cfg, gainScale);
         else
@@ -137,7 +143,7 @@ function res = simulate_closed_loop(mode, cfg)
         [odoMeas, obsList, shaftVelMeas] = sensor_odometry_landmark( ...
             stepIdx, poseTrue, encoderDelta, plantState, cfg);
 
-        % State estimation update (none vs raw odometry vs complementary filter)
+        % State estimation update (none vs raw odometry vs CompFilter vs EKF)
         if strcmp(mode, 'C0_ideal')
             poseEst = poseTrue;
             slipEst = 0.0;
@@ -147,6 +153,9 @@ function res = simulate_closed_loop(mode, cfg)
                        wrap_to_pi(poseOdo(3) + odoMeas(2))];
             poseEst = poseOdo;
             slipEst = 0.0;
+        elseif strcmp(mode, 'C5_ekf_fuzzy_pidf')
+            [ekfState, poseEst, ~, slipEst] = ekf_standard( ...
+                ekfState, odoMeas, obsList, cfg);
         else
             [compState, poseEst, slipEst] = complementary_pose_filter( ...
                 compState, odoMeas, obsList, cfg);

@@ -45,9 +45,11 @@ cfg.scenario.loadStep.K = 0.70;
 cfg.scenario.loadStep.T = 0.65;
 cfg.scenario.loadStep.tau = 0.10;
 
-%% 2. Run C0..C4
-modes = {'C0_ideal', 'C1_noisy', 'C2_comp', 'C3_comp_pidf', 'C4_comp_fuzzy_pidf'};
-labels = {'C0 Ideal', 'C1 Noisy Odo', 'C2 CompFilter', 'C3 Comp+PIDF', 'C4 Comp+FuzzyPID'};
+%% 2. Run C0..C5 (including C5_ekf_fuzzy_pidf)
+modes = {'C0_ideal', 'C1_noisy', 'C2_comp', 'C3_comp_pidf', ...
+         'C4_comp_fuzzy_pidf', 'C5_ekf_fuzzy_pidf'};
+labels = {'C0 Ideal', 'C1 Noisy Odo', 'C2 CompFilter', ...
+          'C3 Comp+PIDF', 'C4 Comp+FuzzyPID', 'C5 EKF+FuzzyPID'};
 results = cell(size(modes));
 
 fprintf('=== Smoke Comparison on %s (seed=%d) ===\n', cfg.scenario.name, cfg.seed);

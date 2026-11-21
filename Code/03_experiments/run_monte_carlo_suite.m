@@ -25,8 +25,8 @@ scenarios = {'S1_sensor_noise', 'S2_wheel_slip', 'S3_model_mismatch', ...
              'S4_load_step', 'S5_worst_case'};
 scenShort = {'S1 Noise', 'S2 Slip', 'S3 Mismatch', 'S4 LoadStep', 'S5 Worst'};
 
-modes = {'C1_noisy', 'C2_comp', 'C3_comp_pidf', 'C4_comp_fuzzy_pidf'};
-modeLabels = {'C1 Noisy', 'C2 CompFilter', 'C3 Comp+PIDF', 'C4 Comp+FuzzyPID'};
+modes = {'C1_noisy', 'C2_comp', 'C3_comp_pidf', 'C4_comp_fuzzy_pidf', 'C5_ekf_fuzzy_pidf'};
+modeLabels = {'C1 Noisy', 'C2 CompFilter', 'C3 Comp+PIDF', 'C4 Comp+FuzzyPID', 'C5 EKF+FuzzyPID'};
 
 numScen = numel(scenarios);
 numModes = numel(modes);
@@ -52,12 +52,34 @@ wTV         = nan(numScen, numModes, numSeeds);
 
 repS5 = cell(1, numModes);
 
+% Reuse cached C1..C4 results if available with identical seeds
+matPath = fullfile(resultsDir, 'mc_suite_results.mat');
+startMode = 1;
+if exist(matPath, 'file')
+    prev = load(matPath);
+    if isfield(prev, 'cteRmse') && size(prev.cteRmse, 1) == numScen && ...
+       size(prev.cteRmse, 3) == numSeeds && size(prev.cteRmse, 2) >= 4
+        cteRmse(:, 1:4, :)     = prev.cteRmse(:, 1:4, :);
+        cteMax(:, 1:4, :)      = prev.cteMax(:, 1:4, :);
+        compTime(:, 1:4, :)    = prev.compTime(:, 1:4, :);
+        goalReached(:, 1:4, :) = prev.goalReached(:, 1:4, :);
+        estPosRmse(:, 1:4, :)  = prev.estPosRmse(:, 1:4, :);
+        estHeadRmse(:, 1:4, :) = prev.estHeadRmse(:, 1:4, :);
+        wTV(:, 1:4, :)         = prev.wTV(:, 1:4, :);
+        for m = 1:4
+            repS5{m} = prev.repS5{m};
+        end
+        startMode = 5;
+        fprintf('Loaded cached C1..C4 Monte Carlo results; running C5_ekf_fuzzy_pidf...\n');
+    end
+end
+
 tStart = tic;
 for s = 1:numScen
     cfgBase = scenario_presets(scenarios{s});
     tScen = tic;
 
-    for m = 1:numModes
+    for m = startMode:numModes
         for r = 1:numSeeds
             cfgRun = cfgBase;
             cfgRun.seed = seeds(r);
@@ -145,43 +167,44 @@ if batchStartupOptionUsed
 end
 
 fig1 = figure('Visible', figVisible, 'Position', [70 70 1280 500], 'Color', 'w');
-colors3 = [0.85 0.55 0.10; 0.49 0.18 0.56; 0.15 0.62 0.25];
+colors4 = [0.85 0.55 0.10; 0.49 0.18 0.56; 0.15 0.62 0.25; 0.00 0.45 0.74];
 
 subplot(1, 2, 1); hold on; grid on;
-offsets = [-0.24, 0.0, 0.24];
-boxWidth = 0.20;
-for mIdx = 2:4
+offsets = [-0.27, -0.09, 0.09, 0.27];
+boxWidth = 0.15;
+for mIdx = 2:5
     dataMat = squeeze(cteRmse(:, mIdx, :))'; % [numSeeds x numScen]
     pos = (1:numScen) + offsets(mIdx - 1);
     b = boxplot(dataMat, 'Positions', pos, 'Widths', boxWidth, ...
-        'Colors', colors3(mIdx - 1, :), 'Symbol', '+');
+        'Colors', colors4(mIdx - 1, :), 'Symbol', '+');
     set(b, 'LineWidth', 1.2);
 end
-yline(resS0.metrics.rmseCrossTrack, 'b--', 'LineWidth', 1.4);
-hLeg = gobjects(4, 1);
-hLeg(1) = plot(NaN, NaN, 's', 'Color', colors3(1,:), 'MarkerFaceColor', colors3(1,:), 'DisplayName', 'C2 CompFilter');
-hLeg(2) = plot(NaN, NaN, 's', 'Color', colors3(2,:), 'MarkerFaceColor', colors3(2,:), 'DisplayName', 'C3 Comp+PIDF');
-hLeg(3) = plot(NaN, NaN, 's', 'Color', colors3(3,:), 'MarkerFaceColor', colors3(3,:), 'DisplayName', 'C4 Comp+FuzzyPID');
-hLeg(4) = plot(NaN, NaN, 'b--', 'LineWidth', 1.4, 'DisplayName', 'C0 Ideal Baseline');
+yline(resS0.metrics.rmseCrossTrack, 'k--', 'LineWidth', 1.4);
+hLeg = gobjects(5, 1);
+hLeg(1) = plot(NaN, NaN, 's', 'Color', colors4(1,:), 'MarkerFaceColor', colors4(1,:), 'DisplayName', 'C2 CompFilter');
+hLeg(2) = plot(NaN, NaN, 's', 'Color', colors4(2,:), 'MarkerFaceColor', colors4(2,:), 'DisplayName', 'C3 Comp+PIDF');
+hLeg(3) = plot(NaN, NaN, 's', 'Color', colors4(3,:), 'MarkerFaceColor', colors4(3,:), 'DisplayName', 'C4 Comp+FuzzyPID');
+hLeg(4) = plot(NaN, NaN, 's', 'Color', colors4(4,:), 'MarkerFaceColor', colors4(4,:), 'DisplayName', 'C5 EKF+FuzzyPID');
+hLeg(5) = plot(NaN, NaN, 'k--', 'LineWidth', 1.4, 'DisplayName', 'C0 Ideal Baseline');
 set(gca, 'XTick', 1:numScen, 'XTickLabel', scenShort);
 xlim([0.4, numScen + 0.6]);
-ylim([0, max(cteRmse(:, 2:4, :), [], 'all') * 1.15]);
+ylim([0, max(cteRmse(:, 2:5, :), [], 'all') * 1.15]);
 ylabel('Cross-Track RMSE [m]');
 title(sprintf('Cross-Track RMSE (N=%d seeds; C1 diverges 1.2-3.7 m)', numSeeds));
 legend(hLeg, 'Location', 'northwest');
 
 subplot(1, 2, 2); hold on; grid on;
-timeMeans = squeeze(mean(compTime(:, 2:4, :), 3));
+timeMeans = squeeze(mean(compTime(:, 2:5, :), 3));
 hb = bar(timeMeans);
-for k = 1:3
-    hb(k).FaceColor = colors3(k, :);
+for k = 1:4
+    hb(k).FaceColor = colors4(k, :);
 end
-yline(resS0.metrics.completionTime, 'b--', 'LineWidth', 1.5, 'DisplayName', 'C0 Ideal Time');
+yline(resS0.metrics.completionTime, 'k--', 'LineWidth', 1.5, 'DisplayName', 'C0 Ideal Time');
 set(gca, 'XTick', 1:numScen, 'XTickLabel', scenShort);
 ylim([0 115]);
 ylabel('Mean Completion Time [s]');
 title('Completion Time Comparison (Lower is Faster)');
-legend([hb(1), hb(2), hb(3)], {'C2 CompFilter (Open-Loop)', 'C3 Comp+PIDF', 'C4 Comp+FuzzyPID'}, ...
+legend([hb(1), hb(2), hb(3), hb(4)], {'C2 CompFilter', 'C3 Comp+PIDF', 'C4 Comp+FuzzyPID', 'C5 EKF+FuzzyPID'}, ...
     'Location', 'northwest');
 
 exportgraphics(fig1, fullfile(resultsDir, 'mc_cte_and_time.png'), 'Resolution', 200);
@@ -189,7 +212,7 @@ exportgraphics(fig1, fullfile(resultsDir, 'mc_cte_and_time.png'), 'Resolution', 
 %% 6. Figure 2: Representative S5 Run (Trajectories, CTE, Est Error, Fuzzy Gains)
 fig2 = figure('Visible', figVisible, 'Position', [70 70 1280 760], 'Color', 'w');
 
-% (a) Trajectories C0, C2, C3, C4
+% (a) Trajectories C0, C2, C3, C4, C5
 subplot(2, 2, 1); hold on; grid on; axis equal;
 cfgS5 = scenario_presets('S5_worst_case');
 sx = cfgS5.scenario.slipZone.xRange; sy = cfgS5.scenario.slipZone.yRange;
@@ -197,40 +220,40 @@ patch([sx(1) sx(2) sx(2) sx(1)], [sy(1) sy(1) sy(2) sy(2)], [0.85 0.93 1.0], ...
     'EdgeColor', [0.4 0.7 0.9], 'FaceAlpha', 0.45, 'DisplayName', 'Slip Zone');
 plot(cfgS5.landmarks(:,1), cfgS5.landmarks(:,2), 'k^', 'MarkerSize', 5, ...
     'MarkerFaceColor', [0.85 0.85 0.85], 'DisplayName', 'Landmarks');
-plot(resS0.poseTrue(:,1), resS0.poseTrue(:,2), 'b--', 'LineWidth', 1.4, 'DisplayName', 'C0 Ideal');
-for mIdx = 2:4
+plot(resS0.poseTrue(:,1), resS0.poseTrue(:,2), 'k--', 'LineWidth', 1.4, 'DisplayName', 'C0 Ideal');
+for mIdx = 2:5
     r = repS5{mIdx};
     plot(r.poseTrue(:,1), r.poseTrue(:,2), 'LineWidth', 1.6, ...
-        'Color', colors3(mIdx - 1, :), 'DisplayName', modeLabels{mIdx});
+        'Color', colors4(mIdx - 1, :), 'DisplayName', modeLabels{mIdx});
 end
 xlim([0 14]); ylim([0 13]);
 xlabel('x [m]'); ylabel('y [m]');
 title(sprintf('S5 Worst-Case Trajectories (seed=%d)', seeds(1)));
 legend('Location', 'southeast', 'FontSize', 7.5);
 
-% (b) Zoomed CTE vs Time (C0, C2, C3, C4)
+% (b) Zoomed CTE vs Time (C0, C2, C3, C4, C5)
 subplot(2, 2, 2); hold on; grid on;
-plot(resS0.t, resS0.metrics.crossTrackError, 'b--', 'LineWidth', 1.3, 'DisplayName', 'C0 Ideal');
-for mIdx = 2:4
+plot(resS0.t, resS0.metrics.crossTrackError, 'k--', 'LineWidth', 1.3, 'DisplayName', 'C0 Ideal');
+for mIdx = 2:5
     r = repS5{mIdx};
     plot(r.t, r.metrics.crossTrackError, 'LineWidth', 1.5, ...
-        'Color', colors3(mIdx - 1, :), 'DisplayName', modeLabels{mIdx});
+        'Color', colors4(mIdx - 1, :), 'DisplayName', modeLabels{mIdx});
 end
 xline(cfgS5.scenario.loadStep.time, ':k', 'Load Step', 'HandleVisibility', 'off');
 xlabel('Time [s]'); ylabel('Cross-Track Error [m]');
-title('S5 Cross-Track Error Comparison (C2..C4)');
+title('S5 Cross-Track Error Comparison (C2..C5)');
 legend('Location', 'northeast', 'FontSize', 8);
 
-% (c) S5 Localization Position Error (C2, C3, C4 vs C1)
+% (c) S5 Localization Position Error (C2..C5)
 subplot(2, 2, 3); hold on; grid on;
-for mIdx = 2:4
+for mIdx = 2:5
     r = repS5{mIdx};
     posErr = hypot(r.poseEst(:, 1) - r.poseTrue(:, 1), r.poseEst(:, 2) - r.poseTrue(:, 2));
-    plot(r.t, posErr, 'Color', colors3(mIdx - 1, :), 'LineWidth', 1.4, ...
+    plot(r.t, posErr, 'Color', colors4(mIdx - 1, :), 'LineWidth', 1.4, ...
         'DisplayName', modeLabels{mIdx});
 end
 xlabel('Time [s]'); ylabel('Pose Estimation Error [m]');
-title('S5 Complementary Filter Position Error (Non-Kalman)');
+title('S5 Position Estimation Error (CompFilter C2..C4 vs EKF C5)');
 legend('Location', 'northeast', 'FontSize', 8);
 
 % (d) C4 Online Fuzzy-PID Gain Adaptation on S5

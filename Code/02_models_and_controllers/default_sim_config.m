@@ -51,6 +51,13 @@ function cfg = default_sim_config()
     cfg.compFilter.alphaTheta = 0.40;     % Landmark heading blend gain [-]
     cfg.compFilter.maxInnovation = 1.50;  % Outlier rejection gate [m]
 
+    %% Extended Kalman Filter Parameters (C5_ekf_fuzzy_pidf)
+    cfg.ekf.P0 = diag([0.05^2, 0.05^2, deg2rad(2.0)^2]);
+    cfg.ekf.Vhat = diag([0.06^2, deg2rad(4.0)^2]); % Process noise inflated for unmodeled slip
+    cfg.ekf.What = diag([0.08^2, deg2rad(2.5)^2]); % Range-bearing measurement covariance
+    cfg.ekf.useGating = true;
+    cfg.ekf.gateChi2 = 25.0;                       % Robust Mahalanobis gate under slip
+
     %% Inner Filtered PID (PIDF) Velocity Loop (C3, C4)
     % Fixed PIDF tuned for robustness across nominal & loaded FOPDT plant
     cfg.pidf.Kp = 0.75;                   % Proportional gain [-]
