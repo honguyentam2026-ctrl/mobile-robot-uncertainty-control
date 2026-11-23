@@ -6,7 +6,7 @@ function [pidState, uOut] = pid_speed_filtered(pidState, refVel, measVel, cfg, g
 %   filter on derivative-on-measurement to avoid amplifying encoder noise.
 %
 %   Optional GAINSCALE = [sKp, sKi, sKd] scales (Kp, Ki, Kd) online (used
-%   by Fuzzy-PID in C4; defaults to [1, 1, 1] for fixed PIDF in C3).
+%   by Fuzzy-PID in C4 and C5; defaults to [1, 1, 1] for fixed PIDF in C3).
 
     if nargin < 5 || isempty(gainScale)
         gainScale = [1.0, 1.0, 1.0];

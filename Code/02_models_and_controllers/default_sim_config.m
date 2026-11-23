@@ -46,7 +46,7 @@ function cfg = default_sim_config()
     cfg.actuator.wLim = [-3.0, 3.0];    % Angular drive command limits [rad/s]
     cfg.actuator.useNominalDynamics = true; % If false, instantaneous kinematics
 
-    %% Complementary Pose Filter Parameters (Non-Kalman, C2..C4)
+    %% Complementary Pose Filter Parameters (C2..C4)
     cfg.compFilter.alphaPos = 0.50;       % Landmark position blend gain [-]
     cfg.compFilter.alphaTheta = 0.40;     % Landmark heading blend gain [-]
     cfg.compFilter.maxInnovation = 1.50;  % Outlier rejection gate [m]
@@ -58,14 +58,14 @@ function cfg = default_sim_config()
     cfg.ekf.useGating = true;
     cfg.ekf.gateChi2 = 25.0;                       % Robust Mahalanobis gate under slip
 
-    %% Inner Filtered PID (PIDF) Velocity Loop (C3, C4)
+    %% Inner Filtered PID (PIDF) Velocity Loop (C3, C4, C5)
     % Fixed PIDF tuned for robustness across nominal & loaded FOPDT plant
     cfg.pidf.Kp = 0.75;                   % Proportional gain [-]
     cfg.pidf.Ti = 0.50;                   % Integral time constant [s]
     cfg.pidf.Td = 0.08;                   % Derivative time constant [s]
     cfg.pidf.Tf = 0.20;                   % Derivative low-pass filter [s]
 
-    %% Fuzzy-PID Gain Scheduler Parameters (C4, Fuzzy Logic Toolbox)
+    %% Fuzzy-PID Gain Scheduler Parameters (C4, C5, Fuzzy Logic Toolbox)
     cfg.fuzzyPid.errScale = 0.25;         % Speed/tracking error normalization
     cfg.fuzzyPid.slipScale = 0.30;        % Apparent slip normalization
     cfg.fuzzyPid.kpLevels = [0.75, 0.95, 1.15];

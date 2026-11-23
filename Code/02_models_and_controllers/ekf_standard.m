@@ -54,12 +54,16 @@ function [ekfState, poseEst, nis, slipEst] = ekf_standard(ekfState, odoMeas, obs
         cfg.ekf.What, cfg.ekf.useGating, cfg.ekf.gateChi2);
 
     if ~isempty(obsList)
-        if ekfState.odoDistAccum > 0.12 && ekfState.odoTurnAccum < 0.30
-            dispEst = hypot(xUpd(1) - ekfState.poseAtLastLm(1), ...
-                            xUpd(2) - ekfState.poseAtLastLm(2));
-            rawSlip = 1.0 - dispEst / ekfState.odoDistAccum;
+        if ekfState.odoDistAccum > 0.12 && ekfState.odoTurnAccum < 0.70
+            dispChord = hypot(xUpd(1) - ekfState.poseAtLastLm(1), ...
+                              xUpd(2) - ekfState.poseAtLastLm(2));
+            halfTurn = 0.5 * ekfState.odoTurnAccum;
+            sincTurn = max(sin(halfTurn) / max(halfTurn, 1e-6), 0.85);
+            dispArc  = dispChord / sincTurn;
+            rawSlip = 1.0 - dispArc / ekfState.odoDistAccum;
             rawSlip = min(max(rawSlip, 0.0), 0.50);
-            ekfState.slipEst = 0.85 * ekfState.slipEst + 0.15 * rawSlip;
+            alphaSlip = 0.25 + 0.15 * (rawSlip < ekfState.slipEst);
+            ekfState.slipEst = (1.0 - alphaSlip) * ekfState.slipEst + alphaSlip * rawSlip;
         end
         ekfState.poseAtLastLm = xUpd;
         ekfState.odoDistAccum = 0.0;

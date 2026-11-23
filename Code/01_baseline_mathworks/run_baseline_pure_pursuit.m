@@ -8,7 +8,8 @@
 %      kinematic baseline (no sensor noise, no slip, no model mismatch).
 %   2) Save reference trajectory data and plots to 01_baseline_mathworks/results/
 %      to serve as the ideal upper-bound benchmark (S0) before introducing
-%      uncertainty, EKF, and PI (SIMC) extensions in subsequent modules.
+%      uncertainty, Complementary Filter, EKF, PIDF, and Fuzzy-PID extensions
+%      in subsequent modules.
 
 clear; clc; close all;
 
@@ -128,14 +129,17 @@ legend('Location', 'southeast');
 
 subplot(1, 2, 2);
 yyaxis left;
-plot(tHist, metrics.crossTrackError, 'b-', 'LineWidth', 1.5);
+hCte = plot(tHist, metrics.crossTrackError, 'b-', 'LineWidth', 1.5, ...
+    'DisplayName', 'Cross-Track Error e_{CTE} [m]');
 ylabel('Cross-Track Error [m]');
 yyaxis right;
-plot(tHist, wHist, 'r--', 'LineWidth', 1.2);
+hW = plot(tHist, wHist, 'r--', 'LineWidth', 1.2, ...
+    'DisplayName', 'Angular Velocity \omega [rad/s]');
 ylabel('Angular Velocity \omega [rad/s]');
 grid on;
 xlabel('Time [s]');
 title(sprintf('Cross-Track Error (RMSE = %.4f m)', metrics.rmseCrossTrack));
+legend([hCte, hW], 'Location', 'northeast', 'FontSize', 8.5);
 
 exportgraphics(fig, fullfile(resultsDir, 'baseline_s0_trajectory.png'), 'Resolution', 200);
 save(fullfile(resultsDir, 'baseline_s0_results.mat'), ...

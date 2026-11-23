@@ -1,6 +1,6 @@
 function [gainScale, slipBoost, fisState] = fuzzy_pid_scheduler( ...
     fisState, speedErrNorm, slipOrRateNorm, cfg)
-%FUZZY_PID_SCHEDULER Sugeno Fuzzy Logic gain scheduler for Fuzzy-PID (C4).
+%FUZZY_PID_SCHEDULER Sugeno Fuzzy Logic gain scheduler for Fuzzy-PID (C4, C5).
 %   [GAINSCALE, SLIPBOOST, FISSTATE] = FUZZY_PID_SCHEDULER(FISSTATE,
 %   SPEEDERRNORM, SLIPORRATENORM, CFG) uses MATLAB Fuzzy Logic Toolbox
 %   (sugfis / evalfis) to adapt PIDF gain multipliers [sKp, sKi, sKd] and
@@ -58,7 +58,7 @@ function [gainScale, slipBoost, fisState] = fuzzy_pid_scheduler( ...
             1 3  2 3 2 3  1 1;  % Small err, High slip     -> strong boost & Ki
             2 1  2 2 2 1  1 1;  % Med err, Low slip        -> nominal PIDF
             2 2  2 2 2 2  1 1;  % Med err, Mod slip        -> firm PIDF + mild boost
-            2 3  3 3 3 3  1 1;  % Med err, High slip       -> aggressive + strong boost
+            2 3  2 3 2 3  1 1;  % Med err, High slip       -> firm Kp/Kd + strong Ki & boost
             3 1  3 2 3 1  1 1;  % Large err, Low slip      -> fast transient recovery
             3 2  3 3 3 2  1 1;  % Large err, Mod slip      -> high Kp/Ki/Kd + boost
             3 3  3 3 3 3  1 1;  % Large err, High slip     -> maximum recovery

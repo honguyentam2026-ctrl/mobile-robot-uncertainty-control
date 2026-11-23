@@ -1,8 +1,7 @@
 function res = simulate_closed_loop(mode, cfg)
 %SIMULATE_CLOSED_LOOP Run one closed-loop differential-drive simulation.
 %   RES = SIMULATE_CLOSED_LOOP(MODE, CFG) simulates path following under the
-%   uncertainty scenario in CFG using one of five non-Kalman controller/
-%   estimator modes:
+%   uncertainty scenario in CFG using one of six controller/estimator modes:
 %     'C0_ideal'          - Pure Pursuit using true pose (ideal reference)
 %     'C1_noisy'          - Pure Pursuit using raw noisy odometry (no filter)
 %     'C2_comp'           - Pure Pursuit + Complementary Filter (open-loop inner)
@@ -94,18 +93,19 @@ function res = simulate_closed_loop(mode, cfg)
         isFuzzyMode = strcmp(mode, 'C4_comp_fuzzy_pidf') || strcmp(mode, 'C5_ekf_fuzzy_pidf');
         if isFuzzyMode
             cteEst = local_point_to_polyline_dist(poseForCtrl(1:2)', cfg.path);
-            velErr = hypot(vPPPrev - shaftVelMeas(1), 0.5 * (wPPPrev - shaftVelMeas(2)));
-            errNorm = (0.65 * cteEst + 0.35 * velErr) / cfg.fuzzyPid.errScale;
+            velErr = hypot(vPPPrev - shaftVelMeas(1), 0.35 * (wPPPrev - shaftVelMeas(2)));
+            errNorm = (0.75 * cteEst + 0.25 * velErr) / cfg.fuzzyPid.errScale;
             slipNorm = slipEst / cfg.fuzzyPid.slipScale;
 
             [gainScale, slipBoost, fisState] = fuzzy_pid_scheduler( ...
                 fisState, errNorm, slipNorm, cfg);
 
             if cfg.fuzzyPid.adaptLookahead
-                % Tighten lookahead only when tracking error is significant
-                errExcess = max(cteEst - 0.08, 0.0) / 0.25;
-                adaptFactor = 1.0 - 0.22 * min(errExcess, 1.0);
-                pp.LookaheadDistance = max(0.30, cfg.pp.LookaheadDistance * adaptFactor);
+                % Smoothly widen lookahead under high slip/turn or near sharp turns to prevent
+                % over-steering oscillation under heavy-load inertia, and tighten slightly on straight segments
+                turnRatio = min(abs(wPPPrev) / cfg.pp.MaxAngularVelocity, 1.0);
+                dLScale = 1.0 + 0.45 * turnRatio + 0.25 * min(slipNorm, 1.0);
+                pp.LookaheadDistance = min(max(cfg.pp.LookaheadDistance * dLScale, 0.36), 0.68);
             end
         end
 
@@ -115,7 +115,11 @@ function res = simulate_closed_loop(mode, cfg)
         wPPPrev = wPP;
 
         if isFuzzyMode
-            vRef = min(max(vPP * slipBoost, cfg.actuator.vLim(1)), cfg.actuator.vLim(2));
+            % Automatically taper slip velocity boost during sharp turns or final goal approach
+            turnDamp = 1.0 - 0.65 * min(abs(wPP) / cfg.pp.MaxAngularVelocity, 1.0);
+            goalDamp = min(max((distanceToGoal - 0.25) / 1.0, 0.0), 1.0);
+            effBoost = 1.0 + (slipBoost - 1.0) * turnDamp * goalDamp;
+            vRef = min(max(vPP * effBoost, cfg.actuator.vLim(1)), cfg.actuator.vLim(2));
             wRef = wPP;
         else
             vRef = vPP;
@@ -133,7 +137,11 @@ function res = simulate_closed_loop(mode, cfg)
         vRefHist(stepIdx) = vPP;
         wRefHist(stepIdx) = wPP;
         uCmdHist(stepIdx, :) = uCmd';
-        fuzzyGainHist(stepIdx, :) = [gainScale, slipBoost];
+        if isFuzzyMode
+            fuzzyGainHist(stepIdx, :) = [gainScale, effBoost];
+        else
+            fuzzyGainHist(stepIdx, :) = [gainScale, slipBoost];
+        end
 
         % True physical robot step
         [plantState, poseTrue, encoderDelta, ~] = robot_plant_step( ...

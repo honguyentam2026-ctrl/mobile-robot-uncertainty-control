@@ -1,5 +1,5 @@
-%% Smoke Test & Preliminary Comparison of C0..C4 (Non-Kalman Architecture)
-% Runs modes C0_ideal through C4_comp_fuzzy_pidf on a stressful warehouse
+%% Smoke Test & Preliminary Comparison of C0..C5 (Complementary Filter & EKF)
+% Runs modes C0_ideal through C5_ekf_fuzzy_pidf on a stressful warehouse
 % scenario (odometry + landmark noise, wheel radius/track mismatch, floor
 % slip patch, and mid-run payload step change) using the same RNG seed.
 
@@ -100,7 +100,7 @@ for m = 1:numel(modes)
 end
 xlim([-0.5 14]); ylim([-0.5 13]);
 xlabel('x [m]'); ylabel('y [m]');
-title('True Trajectories (Non-Kalman C0..C4)');
+title('True Trajectories (C0..C5)');
 legend('Location', 'southeast', 'FontSize', 7.5);
 
 % Panel 2: Cross-Track Error vs Time
@@ -110,7 +110,8 @@ for m = 1:numel(modes)
     plot(r.t, r.metrics.crossTrackError, 'LineWidth', 1.5, ...
         'Color', colors(m, :), 'DisplayName', labels{m});
 end
-xline(cfg.scenario.loadStep.time, ':k', 'Load Step', 'LabelVerticalAlignment', 'bottom');
+xline(cfg.scenario.loadStep.time, ':k', 'Load Step', ...
+    'LabelVerticalAlignment', 'bottom', 'HandleVisibility', 'off');
 xlabel('Time [s]'); ylabel('Cross-Track Error [m]');
 title('Path Tracking Error over Time');
 legend('Location', 'northeast', 'FontSize', 7.5);

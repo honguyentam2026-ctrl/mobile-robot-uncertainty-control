@@ -1,6 +1,7 @@
 %% Monte Carlo Evaluation Suite across Scenarios S0..S5 (N = 30 Seeds)
-% Runs C1_noisy, C2_comp, C3_comp_pidf, and C4_comp_fuzzy_pidf across S1..S5
-% using 30 shared RNG seeds per scenario, plus S0_ideal baseline (C0_ideal).
+% Runs C1_noisy, C2_comp, C3_comp_pidf, C4_comp_fuzzy_pidf, and
+% C5_ekf_fuzzy_pidf across S1..S5 using 30 shared RNG seeds per scenario,
+% plus S0_ideal baseline (C0_ideal).
 % Exports CSV summary tables, MAT data, boxplots, and S5 diagnostic plots
 % to Code/03_experiments/results/.
 
@@ -51,28 +52,7 @@ estHeadRmse = nan(numScen, numModes, numSeeds);
 wTV         = nan(numScen, numModes, numSeeds);
 
 repS5 = cell(1, numModes);
-
-% Reuse cached C1..C4 results if available with identical seeds
-matPath = fullfile(resultsDir, 'mc_suite_results.mat');
 startMode = 1;
-if exist(matPath, 'file')
-    prev = load(matPath);
-    if isfield(prev, 'cteRmse') && size(prev.cteRmse, 1) == numScen && ...
-       size(prev.cteRmse, 3) == numSeeds && size(prev.cteRmse, 2) >= 4
-        cteRmse(:, 1:4, :)     = prev.cteRmse(:, 1:4, :);
-        cteMax(:, 1:4, :)      = prev.cteMax(:, 1:4, :);
-        compTime(:, 1:4, :)    = prev.compTime(:, 1:4, :);
-        goalReached(:, 1:4, :) = prev.goalReached(:, 1:4, :);
-        estPosRmse(:, 1:4, :)  = prev.estPosRmse(:, 1:4, :);
-        estHeadRmse(:, 1:4, :) = prev.estHeadRmse(:, 1:4, :);
-        wTV(:, 1:4, :)         = prev.wTV(:, 1:4, :);
-        for m = 1:4
-            repS5{m} = prev.repS5{m};
-        end
-        startMode = 5;
-        fprintf('Loaded cached C1..C4 Monte Carlo results; running C5_ekf_fuzzy_pidf...\n');
-    end
-end
 
 tStart = tic;
 for s = 1:numScen

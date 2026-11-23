@@ -35,6 +35,11 @@ Code/
 │   ├── run_monte_carlo_suite.m
 │   ├── run_parameter_sweeps.m
 │   └── results/
+├── 04_report_figures/             # [Tự thiết kế] Vẽ sơ đồ khối (Hình 2.4, 2.5) & đồ thị phân tích Chương 4
+│   ├── draw_figure_2_4_comp_filter.m
+│   ├── draw_figure_2_5_ekf.m
+│   ├── draw_chapter4_analysis_figures.m
+│   └── results/
 ├── utils/
 │   ├── wrap_to_pi.m
 │   └── compute_path_metrics.m
@@ -71,3 +76,10 @@ Mở MATLAB tại thư mục `Code/` và chạy lần lượt:
    run('03_experiments/run_parameter_sweeps.m')
    ```
    Xuất `param_lookahead_table.csv`, `param_comp_gain_table.csv` và `param_sweeps_analysis.png`.
+5. **Bước 4 — Vẽ lại bộ sơ đồ khối & đồ thị phân tích dùng trong báo cáo (`Hình 2.4, 2.5, 4.3, 4.4`):**
+   ```matlab
+   run('04_report_figures/draw_figure_2_4_comp_filter.m')
+   run('04_report_figures/draw_figure_2_5_ekf.m')
+   run('04_report_figures/draw_chapter4_analysis_figures.m')
+   ```
+   Xuất các ảnh `hinh_2_4_*.png`, `hinh_2_5_*.png`, `ch4_metrics_dashboard_*.png` và `ch4_scenarios_s1_to_s4_*.png` (bản Tiếng Việt & Tiếng Anh) vào `04_report_figures/results/` *(cần chạy Bước 3a trước để có `mc_summary_table.csv`)*.

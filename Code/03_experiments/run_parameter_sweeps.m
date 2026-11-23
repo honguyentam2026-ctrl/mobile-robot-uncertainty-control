@@ -61,6 +61,7 @@ for i = 1:nLA
     for r = 1:numSeeds
         cfg5 = scenario_presets('S5_worst_case');
         cfg5.pp.LookaheadDistance = dL;
+        cfg5.fuzzyPid.adaptLookahead = false;
         cfg5.seed = seeds(r);
         r5 = simulate_closed_loop('C4_comp_fuzzy_pidf', cfg5);
         cteBuf(r) = r5.metrics.rmseCrossTrack;
@@ -141,11 +142,13 @@ fig = figure('Visible', figVisible, 'Position', [90 90 1200 450], 'Color', 'w');
 
 subplot(1, 2, 1);
 yyaxis left;
-errorbar(lookaheadList, laCteC4Mean, laCteC4Std, '-o', 'LineWidth', 1.6, ...
+cteNegErr = min(laCteC4Std, laCteC4Mean); % Clamp lower error bar at 0 (CTE >= 0)
+errorbar(lookaheadList, laCteC4Mean, cteNegErr, laCteC4Std, '-o', 'LineWidth', 1.6, ...
     'DisplayName', 'S5 C4 CTE RMSE');
 hold on; grid on;
 plot(lookaheadList, laCteIdeal, '--s', 'LineWidth', 1.3, ...
     'DisplayName', 'S0 Ideal CTE RMSE');
+ylim([0, max(laCteC4Mean + laCteC4Std) * 1.12]);
 ylabel('Cross-Track RMSE [m]');
 yyaxis right;
 errorbar(lookaheadList, laWtvC4Mean, laWtvC4Std, '-^', 'LineWidth', 1.5, ...

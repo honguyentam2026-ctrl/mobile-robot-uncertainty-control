@@ -1,10 +1,10 @@
 function [compState, poseEst, slipEst] = complementary_pose_filter( ...
     compState, odoMeas, obsList, cfg)
-%COMPLEMENTARY_POSE_FILTER Non-Kalman 2D pose fusion (odometry + landmarks).
+%COMPLEMENTARY_POSE_FILTER 2D complementary pose fusion (odometry + landmarks).
 %   [COMPSTATE, POSEEST, SLIPEST] = COMPLEMENTARY_POSE_FILTER(COMPSTATE,
 %   ODOMEAS, OBSLIST, CFG) fuses high-rate wheel odometry (10 Hz) with
 %   periodic range-bearing landmark observations (2 Hz) using a fixed-gain
-%   complementary filter (no covariance propagation, no Jacobians, no EKF).
+%   complementary filter (lightweight algebraic fusion for C2..C4).
 %
 %   Also tracks a smoothed apparent longitudinal slip/scale indicator
 %   SLIPEST in [0, 0.6] by comparing landmark-corrected displacement against
@@ -109,13 +109,17 @@ function [compState, poseEst, slipEst] = complementary_pose_filter( ...
             end
         end
 
-        % Update smoothed apparent longitudinal slip indicator (only on low-turn segments)
-        if compState.odoDistAccum > 0.12 && compState.odoTurnAccum < 0.30
-            dispEst = hypot(xPred - compState.poseAtLastLm(1), ...
-                            yPred - compState.poseAtLastLm(2));
-            rawSlip = 1.0 - dispEst / compState.odoDistAccum;
+        % Update smoothed apparent longitudinal slip indicator (using arc-chord correction)
+        if compState.odoDistAccum > 0.12 && compState.odoTurnAccum < 0.70
+            dispChord = hypot(xPred - compState.poseAtLastLm(1), ...
+                              yPred - compState.poseAtLastLm(2));
+            halfTurn = 0.5 * compState.odoTurnAccum;
+            sincTurn = max(sin(halfTurn) / max(halfTurn, 1e-6), 0.85);
+            dispArc  = dispChord / sincTurn;
+            rawSlip = 1.0 - dispArc / compState.odoDistAccum;
             rawSlip = min(max(rawSlip, 0.0), 0.50);
-            compState.slipEst = 0.85 * compState.slipEst + 0.15 * rawSlip;
+            alphaSlip = 0.25 + 0.15 * (rawSlip < compState.slipEst);
+            compState.slipEst = (1.0 - alphaSlip) * compState.slipEst + alphaSlip * rawSlip;
         end
         compState.poseAtLastLm = [xPred; yPred; thPred];
         compState.odoDistAccum = 0.0;
