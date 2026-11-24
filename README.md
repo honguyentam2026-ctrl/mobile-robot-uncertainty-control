@@ -12,6 +12,8 @@
   1. **Hồ Nguyên Tâm** — MSSV: `106220233` (Tỷ lệ đóng góp: $50\%$)
   2. **Nguyễn Văn Quý** — MSSV: `106220232` (Tỷ lệ đóng góp: $50\%$)
 - **Môi trường phát triển & Kiểm chứng:** MATLAB R2024b (`v24.2`)
+- **Kho mã nguồn GitHub (Source Code):** https://github.com/honguyentam2026-ctrl/mobile-robot-uncertainty-control.git
+- **Video Demo & Phân tích kết quả (Google Drive):** https://drive.google.com/drive/folders/1HSU9eLqLiYa58-xiQiUSD3aPoGfCH3yA?usp=sharing
 
 ---
 
