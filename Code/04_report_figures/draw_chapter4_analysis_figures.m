@@ -49,21 +49,52 @@ function draw_chapter4_analysis_figures()
         end
     end
 
-    % Render Dashboard (Figure 4.2) in VI and EN
-    render_dashboard(mc, 'vi', fullfile(outDir, 'ch4_metrics_dashboard_vi.png'));
-    render_dashboard(mc, 'en', fullfile(outDir, 'ch4_metrics_dashboard_en.png'));
+    % Print Monte Carlo Summary Table (Table 4.1) to Command Window
+    csvPath = fullfile(codeRoot, '03_experiments', 'results', 'mc_summary_table.csv');
+    if exist(csvPath, 'file')
+        fprintf('\n=== BANG 4.1: TONG HOP KET QUA MONTE CARLO (N = 30 seeds, 750 luot chay) ===\n');
+        disp(readtable(csvPath));
+    end
 
-    % Render S1..S4 Physical Phenomena (Figure 4.3) in VI and EN
-    render_s1_to_s4(mc.resS0, cfgS1, repS1, cfgS2, repS2, cfgS3, repS3, cfgS4, repS4, ...
-        'vi', fullfile(outDir, 'ch4_scenarios_s1_to_s4_vi.png'));
-    render_s1_to_s4(mc.resS0, cfgS1, repS1, cfgS2, repS2, cfgS3, repS3, cfgS4, repS4, ...
-        'en', fullfile(outDir, 'ch4_scenarios_s1_to_s4_en.png'));
+    showGui = ~batchStartupOptionUsed;
 
-    fprintf('Successfully generated Chapter 4 dashboard & S1-S4 analysis figures!\n');
+    % Render Dashboard (Figure 4.3) in VI and EN (keep VI open on screen if GUI)
+    render_dashboard(mc, 'en', fullfile(outDir, 'ch4_metrics_dashboard_en.png'), false);
+    render_dashboard(mc, 'vi', fullfile(outDir, 'ch4_metrics_dashboard_vi.png'), showGui);
+
+    % Render S1..S4 Physical Phenomena (Figure 4.4) in VI and EN (keep VI open on screen if GUI)
+    render_s1_to_s4(mc.resS0, cfgS1, repS1, cfgS2, repS2, cfgS3, repS3, cfgS4, repS4, ...
+        'en', fullfile(outDir, 'ch4_scenarios_s1_to_s4_en.png'), false);
+    render_s1_to_s4(mc.resS0, cfgS1, repS1, cfgS2, repS2, cfgS3, repS3, cfgS4, repS4, ...
+        'vi', fullfile(outDir, 'ch4_scenarios_s1_to_s4_vi.png'), showGui);
+
+    % Also pop up Figure 4.2 (Boxplot) and Figure 4.6 (S5 Detailed Analysis) if in GUI
+    if showGui
+        imgBox = fullfile(codeRoot, '03_experiments', 'results', 'mc_cte_and_time.png');
+        if exist(imgBox, 'file')
+            figBox = figure('Name', 'Hinh 4.2 - Phan bo Boxplot CTE RMSE & Thoi gian hoan thanh (S1-S5)', ...
+                'Visible', 'on', 'Color', 'w', 'Position', [40, 80, 1250, 520]);
+            axB = axes(figBox, 'Position', [0.01 0.01 0.98 0.98]);
+            imshow(imread(imgBox), 'Parent', axB);
+            axis(axB, 'off');
+        end
+        imgS5 = fullfile(codeRoot, '03_experiments', 'results', 'mc_s5_detailed_analysis.png');
+        if exist(imgS5, 'file')
+            figS5 = figure('Name', 'Hinh 4.6 - Phan tich chi tiet kich ban S5 (Quỹ đạo, CTE, Sai số định vị, Hệ số Fuzzy-PID)', ...
+                'Visible', 'on', 'Color', 'w', 'Position', [90, 40, 1280, 780]);
+            axS5 = axes(figS5, 'Position', [0.01 0.01 0.98 0.98]);
+            imshow(imread(imgS5), 'Parent', axS5);
+            axis(axS5, 'off');
+        end
+    end
+
+    fprintf('Successfully generated & displayed Chapter 4 analysis figures (Hinh 4.2, 4.3, 4.4, 4.6)!\n');
 end
 
-function render_dashboard(mc, lang, outPath)
-    fig = figure('Visible', 'off', 'Color', 'w', 'Position', [60, 60, 1380, 820]);
+function render_dashboard(mc, lang, outPath, keepOpen)
+    visFlag = ternary(keepOpen, 'on', 'off');
+    fig = figure('Name', 'Hinh 4.3 - Dashboard 4 Chi tieu dinh luong Monte Carlo (S1-S5)', ...
+        'Visible', visFlag, 'Color', 'w', 'Position', [60, 60, 1380, 820]);
 
     colors4 = [0.85 0.55 0.10;   % C2 CompFilter (Amber)
                0.49 0.18 0.56;   % C3 Comp+PIDF  (Purple)
@@ -146,7 +177,9 @@ function render_dashboard(mc, lang, outPath)
     legend(ax4, hb4, legLabels, 'Location', 'northwest', 'FontSize', 8.5);
 
     exportgraphics(fig, outPath, 'Resolution', 250, 'BackgroundColor', 'white');
-    close(fig);
+    if ~keepOpen
+        close(fig);
+    end
 end
 
 function hb = draw_grouped_bars(ax, meanMat, stdMat, colors4, fmtStr, yMax)
@@ -177,8 +210,10 @@ function hb = draw_grouped_bars(ax, meanMat, stdMat, colors4, fmtStr, yMax)
     end
 end
 
-function render_s1_to_s4(resS0, cfgS1, repS1, cfgS2, repS2, ~, repS3, cfgS4, repS4, lang, outPath)
-    fig = figure('Visible', 'off', 'Color', 'w', 'Position', [60, 60, 1380, 820]);
+function render_s1_to_s4(resS0, cfgS1, repS1, cfgS2, repS2, ~, repS3, cfgS4, repS4, lang, outPath, keepOpen)
+    visFlag = ternary(keepOpen, 'on', 'off');
+    fig = figure('Name', 'Hinh 4.4 - Phan tich 4 hien tuong vat ly tren S1-S4', ...
+        'Visible', visFlag, 'Color', 'w', 'Position', [75, 45, 1380, 820]);
 
     colors4 = [0.85 0.55 0.10;   % C2 CompFilter (Amber)
                0.49 0.18 0.56;   % C3 Comp+PIDF  (Purple)
@@ -312,7 +347,9 @@ function render_s1_to_s4(resS0, cfgS1, repS1, cfgS2, repS2, ~, repS3, cfgS4, rep
     legend(ax4, 'Location', 'northeast', 'FontSize', 7.8);
 
     exportgraphics(fig, outPath, 'Resolution', 250, 'BackgroundColor', 'white');
-    close(fig);
+    if ~keepOpen
+        close(fig);
+    end
 end
 
 function out = ternary(cond, a, b)
